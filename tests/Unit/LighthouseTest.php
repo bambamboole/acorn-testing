@@ -49,38 +49,29 @@ it('builds the minimal command with just a site URL', function (): void {
     ]);
 });
 
-it('local() bootstraps the ServerManager driver and uses its rewrite() URL', function (): void {
-    $http = new class implements Pest\Browser\Contracts\HttpServer {
+it('local() bootstraps the provided LocalServer and uses its url()', function (): void {
+    $server = new class implements Bambamboole\AcornTesting\Testing\LocalServer {
         public bool $bootstrapped = false;
-
-        public function start(): void {}
-
-        public function stop(): void {}
 
         public function bootstrap(): void
         {
             $this->bootstrapped = true;
         }
 
-        public function flush(): void {}
-
-        public function rewrite(string $url): string
+        public function url(): string
         {
-            return 'http://stub.test:9000' . $url;
+            return 'http://stub.test:9000';
         }
-
-        public function lastThrowable(): ?Throwable
-        {
-            return null;
-        }
-
-        public function throwLastThrowableIfNeeded(): void {}
     };
 
-    $cmd = Lighthouse::local($http)->command();
+    $cmd = Lighthouse::local($server)->command();
 
-    expect($http->bootstrapped)->toBeTrue()
+    expect($server->bootstrapped)->toBeTrue()
         ->and($cmd)->toBe(['npx', 'unlighthouse-ci', '--site', 'http://stub.test:9000']);
+});
+
+it('local() throws when no FrankenPhpDriver is active and no server is passed', function (): void {
+    expect(fn () => Lighthouse::local())->toThrow(RuntimeException::class, 'requires an active LocalServer');
 });
 
 it('remote() takes any explicit URL without touching ServerManager', function (): void {

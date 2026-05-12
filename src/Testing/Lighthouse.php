@@ -5,8 +5,7 @@ declare(strict_types=1);
 namespace Bambamboole\AcornTesting\Testing;
 
 use Illuminate\Process\Factory;
-use Pest\Browser\Contracts\HttpServer;
-use Pest\Browser\ServerManager;
+use RuntimeException;
 
 /**
  * Fluent builder for running Unlighthouse-CI from a Pest browser test
@@ -53,22 +52,26 @@ final class Lighthouse
     private function __construct(private readonly string $site) {}
 
     /**
-     * Audit the FrankenPHP test server. Bootstraps the server (idempotent) via
-     * the same `Pest\Browser\ServerManager` machinery `visit()` uses, then
-     * resolves the base URL from the driver. Intended for Pest browser tests
-     * — the `BrowserTestCase` chain in `bambamboole/acorn-testing` already
-     * registers the FrankenPhpDriver, so the bootstrap call is essentially
-     * a defensive no-op.
+     * Audit the FrankenPHP test server. Defaults to `FrankenPhpDriver::active()`
+     * — i.e. whichever driver `BrowserTestCase::setUpBeforeClass` started.
+     * Calls `bootstrap()` (idempotent) and reads the base URL from the
+     * driver, so the audit doesn't need to know about ports or hosts.
      */
-    public static function local(?HttpServer $http = null): self
+    public static function local(?LocalServer $server = null): self
     {
-        $http ??= ServerManager::instance()->http();
-        $http->bootstrap();
+        $server ??= FrankenPhpDriver::active();
 
-        // `rewrite('/')` returns the absolute root URL, e.g.
-        // "http://127.0.0.1:8080/" — strip the trailing slash so it composes
-        // cleanly with the `--site` CLI arg downstream.
-        return new self(rtrim($http->rewrite('/'), '/'));
+        if ($server === null) {
+            throw new RuntimeException(
+                'Lighthouse::local() requires an active LocalServer. Call it from a '
+                . 'Pest browser test that extends Bambamboole\AcornTesting\Testing\BrowserTestCase, '
+                . 'or pass a LocalServer explicitly.',
+            );
+        }
+
+        $server->bootstrap();
+
+        return new self($server->url());
     }
 
     /**
