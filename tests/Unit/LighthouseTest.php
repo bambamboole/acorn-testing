@@ -44,20 +44,59 @@ afterEach(function (): void {
 // ---------- command composition ----------
 
 it('builds the minimal command with just a site URL', function (): void {
-    expect(Lighthouse::for('http://127.0.0.1:8080')->command())->toBe([
+    expect(Lighthouse::remote('http://127.0.0.1:8080')->command())->toBe([
         'npx', 'unlighthouse-ci', '--site', 'http://127.0.0.1:8080',
     ]);
 });
 
+it('local() bootstraps the ServerManager driver and uses its rewrite() URL', function (): void {
+    $http = new class implements Pest\Browser\Contracts\HttpServer {
+        public bool $bootstrapped = false;
+
+        public function start(): void {}
+
+        public function stop(): void {}
+
+        public function bootstrap(): void
+        {
+            $this->bootstrapped = true;
+        }
+
+        public function flush(): void {}
+
+        public function rewrite(string $url): string
+        {
+            return 'http://stub.test:9000' . $url;
+        }
+
+        public function lastThrowable(): ?Throwable
+        {
+            return null;
+        }
+
+        public function throwLastThrowableIfNeeded(): void {}
+    };
+
+    $cmd = Lighthouse::local($http)->command();
+
+    expect($http->bootstrapped)->toBeTrue()
+        ->and($cmd)->toBe(['npx', 'unlighthouse-ci', '--site', 'http://stub.test:9000']);
+});
+
+it('remote() takes any explicit URL without touching ServerManager', function (): void {
+    expect(Lighthouse::remote('https://staging.example.com')->command())
+        ->toBe(['npx', 'unlighthouse-ci', '--site', 'https://staging.example.com']);
+});
+
 it('appends --budget when budget() is called', function (): void {
-    $cmd = Lighthouse::for('http://127.0.0.1:8080')->budget(85)->command();
+    $cmd = Lighthouse::remote('http://127.0.0.1:8080')->budget(85)->command();
 
     expect($cmd)->toContain('--budget')
         ->and($cmd)->toContain('85');
 });
 
 it('joins excluded URLs into a single comma-separated arg', function (): void {
-    $cmd = Lighthouse::for('http://127.0.0.1:8080')
+    $cmd = Lighthouse::remote('http://127.0.0.1:8080')
         ->excludedUrls(['/wp-admin/', '/wp-login.php', '/cart/'])
         ->command();
 
@@ -67,36 +106,36 @@ it('joins excluded URLs into a single comma-separated arg', function (): void {
 });
 
 it('omits --exclude-urls when the list is empty', function (): void {
-    expect(Lighthouse::for('http://127.0.0.1:8080')->excludedUrls([])->command())
+    expect(Lighthouse::remote('http://127.0.0.1:8080')->excludedUrls([])->command())
         ->not->toContain('--exclude-urls');
 });
 
 it('appends --mobile when mobile() is called', function (): void {
-    expect(Lighthouse::for('http://127.0.0.1:8080')->mobile()->command())
+    expect(Lighthouse::remote('http://127.0.0.1:8080')->mobile()->command())
         ->toContain('--mobile');
 });
 
 it('appends --desktop when desktop() is called', function (): void {
-    expect(Lighthouse::for('http://127.0.0.1:8080')->desktop()->command())
+    expect(Lighthouse::remote('http://127.0.0.1:8080')->desktop()->command())
         ->toContain('--desktop');
 });
 
 it('omits viewport flags when neither mobile() nor desktop() is called', function (): void {
-    $cmd = Lighthouse::for('http://127.0.0.1:8080')->command();
+    $cmd = Lighthouse::remote('http://127.0.0.1:8080')->command();
 
     expect($cmd)->not->toContain('--mobile')
         ->and($cmd)->not->toContain('--desktop');
 });
 
 it('appends --samples N', function (): void {
-    $cmd = Lighthouse::for('http://127.0.0.1:8080')->samples(3)->command();
+    $cmd = Lighthouse::remote('http://127.0.0.1:8080')->samples(3)->command();
 
     expect($cmd)->toContain('--samples')
         ->and($cmd)->toContain('3');
 });
 
 it('appends --config-file when configPath() is called', function (): void {
-    $cmd = Lighthouse::for('http://127.0.0.1:8080')
+    $cmd = Lighthouse::remote('http://127.0.0.1:8080')
         ->configPath('./unlighthouse.config.js')
         ->command();
 
@@ -106,7 +145,7 @@ it('appends --config-file when configPath() is called', function (): void {
 });
 
 it('composes all options in a single command in the expected order', function (): void {
-    $cmd = Lighthouse::for('https://staging.example.com')
+    $cmd = Lighthouse::remote('https://staging.example.com')
         ->budget(85)
         ->excludedUrls(['/admin/'])
         ->mobile()
@@ -136,7 +175,7 @@ it('run() returns a LighthouseReport wrapping the process result + parsed audits
     $factory = new Factory();
     $factory->fake(['*' => $factory->result(output: 'audit passed', exitCode: 0)]);
 
-    $report = Lighthouse::for('http://127.0.0.1:8080')->quietly()->run($factory);
+    $report = Lighthouse::remote('http://127.0.0.1:8080')->quietly()->run($factory);
 
     expect($report)->toBeInstanceOf(LighthouseReport::class)
         ->and($report->successful())->toBeTrue()
@@ -155,7 +194,7 @@ it('run() returns an empty audit list when ci-result.json is missing', function 
     $factory = new Factory();
     $factory->fake(['*' => $factory->result(output: '', exitCode: 0)]);
 
-    $report = Lighthouse::for('http://127.0.0.1:8080')->quietly()->run($factory);
+    $report = Lighthouse::remote('http://127.0.0.1:8080')->quietly()->run($factory);
 
     expect($report->audits)->toBe([])
         ->and($report->successful())->toBeTrue();
@@ -171,7 +210,7 @@ it('run() surfaces a non-zero exit and still parses audits if the file is presen
         '*' => $factory->result(output: '', errorOutput: '/ has invalid score 0.5', exitCode: 1),
     ]);
 
-    $report = Lighthouse::for('http://127.0.0.1:8080')->quietly()->run($factory);
+    $report = Lighthouse::remote('http://127.0.0.1:8080')->quietly()->run($factory);
 
     expect($report->successful())->toBeFalse()
         ->and($report->failed())->toBeTrue()
@@ -189,7 +228,7 @@ it('report->audit() looks up a URL by exact path', function (): void {
     $factory = new Factory();
     $factory->fake(['*' => $factory->result(exitCode: 0)]);
 
-    $report = Lighthouse::for('http://127.0.0.1:8080')->quietly()->run($factory);
+    $report = Lighthouse::remote('http://127.0.0.1:8080')->quietly()->run($factory);
 
     expect($report->audit('/'))->not->toBeNull()
         ->and($report->audit('/blog/')->performance)->toBe(0.8)
@@ -206,7 +245,7 @@ it('report->below() filters audits by per-category floor', function (): void {
     $factory = new Factory();
     $factory->fake(['*' => $factory->result(exitCode: 0)]);
 
-    $report = Lighthouse::for('http://127.0.0.1:8080')->quietly()->run($factory);
+    $report = Lighthouse::remote('http://127.0.0.1:8080')->quietly()->run($factory);
 
     $belowSeo = $report->below('seo', 0.9);
     expect($belowSeo)->toHaveCount(2)
@@ -219,7 +258,7 @@ it('report->below() throws on an unknown category', function (): void {
     $factory = new Factory();
     $factory->fake(['*' => $factory->result(exitCode: 0)]);
 
-    $report = Lighthouse::for('http://127.0.0.1:8080')->quietly()->run($factory);
+    $report = Lighthouse::remote('http://127.0.0.1:8080')->quietly()->run($factory);
 
     expect(fn () => $report->below('typo', 0.9))->toThrow(InvalidArgumentException::class);
 });
@@ -230,7 +269,7 @@ it('report->throw() returns the report on success and throws on failure', functi
         '*' => $factory->result(exitCode: 0),
     ]);
 
-    $report = Lighthouse::for('http://127.0.0.1:8080')->quietly()->run($factory);
+    $report = Lighthouse::remote('http://127.0.0.1:8080')->quietly()->run($factory);
 
     expect($report->throw())->toBe($report);
 
@@ -239,7 +278,7 @@ it('report->throw() returns the report on success and throws on failure', functi
         '*' => $factory->result(output: '', errorOutput: '/ failed', exitCode: 1),
     ]);
 
-    $failing = Lighthouse::for('http://127.0.0.1:8080')->quietly()->run($factory);
+    $failing = Lighthouse::remote('http://127.0.0.1:8080')->quietly()->run($factory);
 
     expect(fn () => $failing->throw())->toThrow(RuntimeException::class, 'Lighthouse audit failed');
 });

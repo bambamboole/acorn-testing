@@ -76,11 +76,13 @@ it('passes Lighthouse budgets for all crawled URLs', function (): void {
 
     visit('/');
 
-    Lighthouse::for('http://127.0.0.1:8080')->run()->throw();
+    Lighthouse::local()->run()->throw();
 })->group('lighthouse');
 ```
 
-`Lighthouse::for()` returns a chainable builder. Available options (all chained, then `->run()`):
+`Lighthouse::local()` auto-bootstraps the FrankenPHP test server (same `ServerManager` plumbing `visit()` uses) and resolves its URL. For an explicit external target, use `Lighthouse::remote('https://staging.example.com')` — no local server is started; Unlighthouse only needs network access to the URL.
+
+Both entry points return a chainable builder. Available options (all chained, then `->run()`):
 
 | Method | What it does |
 | --- | --- |
@@ -97,7 +99,7 @@ it('passes Lighthouse budgets for all crawled URLs', function (): void {
 `->run()` returns a `LighthouseReport` that wraps both the subprocess result and the per-URL audits parsed from Unlighthouse's `.unlighthouse/ci-result.json`:
 
 ```php
-$report = Lighthouse::for('http://127.0.0.1:8080')->run();
+$report = Lighthouse::local()->run();
 
 // Pass/fail signal — same shape as Illuminate's ProcessResult
 $report->successful();
@@ -137,7 +139,18 @@ Tag it `lighthouse` and exclude it from the regular suite so iteration stays fas
 
 ## Auditing a deployed environment (staging / production)
 
-The Pest test above audits the FrankenPHP-served test site — useful for catching regressions on every PR. To audit a **deployed** site (staging, production, preview build), skip the test entirely and invoke `unlighthouse-ci` directly with the deployed URL:
+`Lighthouse::remote($url)` is the equivalent for a deployed site. Same builder, same report, no local server boot — Unlighthouse just needs network access:
+
+```php
+use Bambamboole\AcornTesting\Testing\Lighthouse;
+
+Lighthouse::remote('https://staging.example.com')
+    ->budget(85)
+    ->run()
+    ->throw();
+```
+
+For one-off audits outside the Pest harness, the same flag set is available on the raw `unlighthouse-ci` CLI:
 
 ```bash
 # One-off (uses the local unlighthouse.config.js budgets)

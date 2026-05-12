@@ -91,11 +91,11 @@ it('passes Lighthouse budgets', function (): void {
     update_option('blog_public', 1);
     update_option('blogdescription', 'Your tagline.');
 
-    visit('/');
-
-    Lighthouse::for('http://127.0.0.1:8080')->run()->throw();
+    Lighthouse::local()->run()->throw();
 })->group('lighthouse');
 ```
+
+Two entry points: `Lighthouse::local()` bootstraps the FrankenPHP test server (same plumbing `visit()` uses) and auto-resolves the URL; `Lighthouse::remote('https://staging.example.com')` audits any explicit external URL without touching the local server.
 
 Chainable options before `->run()`:
 - `budget(int)` — single score floor 1–100 for every category (per-category floors live in `unlighthouse.config.js`)

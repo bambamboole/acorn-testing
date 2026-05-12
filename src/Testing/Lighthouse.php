@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Bambamboole\AcornTesting\Testing;
 
 use Illuminate\Process\Factory;
+use Pest\Browser\Contracts\HttpServer;
+use Pest\Browser\ServerManager;
 
 /**
  * Fluent builder for running Unlighthouse-CI from a Pest browser test
@@ -50,9 +52,33 @@ final class Lighthouse
 
     private function __construct(private readonly string $site) {}
 
-    public static function for(string $site): self
+    /**
+     * Audit the FrankenPHP test server. Bootstraps the server (idempotent) via
+     * the same `Pest\Browser\ServerManager` machinery `visit()` uses, then
+     * resolves the base URL from the driver. Intended for Pest browser tests
+     * — the `BrowserTestCase` chain in `bambamboole/acorn-testing` already
+     * registers the FrankenPhpDriver, so the bootstrap call is essentially
+     * a defensive no-op.
+     */
+    public static function local(?HttpServer $http = null): self
     {
-        return new self($site);
+        $http ??= ServerManager::instance()->http();
+        $http->bootstrap();
+
+        // `rewrite('/')` returns the absolute root URL, e.g.
+        // "http://127.0.0.1:8080/" — strip the trailing slash so it composes
+        // cleanly with the `--site` CLI arg downstream.
+        return new self(rtrim($http->rewrite('/'), '/'));
+    }
+
+    /**
+     * Audit an explicit external URL (staging, production, preview deploy).
+     * No local server is started — Unlighthouse only needs network access
+     * to the target.
+     */
+    public static function remote(string $url): self
+    {
+        return new self($url);
     }
 
     /**
