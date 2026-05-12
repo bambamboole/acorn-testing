@@ -61,14 +61,14 @@ That's it. `composer test:browser` (or however your project runs Pest) will spaw
 
 ## Running the Lighthouse audit
 
-Wire up a single browser test that shells out to Unlighthouse — for example `tests/Browser/LighthouseTest.php`:
+Wire up a single browser test that uses the `Lighthouse` builder — for example `tests/Browser/LighthouseTest.php`:
 
 ```php
 <?php
 
 declare(strict_types=1);
 
-use Illuminate\Process\Factory;
+use Bambamboole\AcornTesting\Testing\Lighthouse;
 
 it('passes Lighthouse budgets for all crawled URLs', function (): void {
     update_option('blog_public', 1);
@@ -76,18 +76,23 @@ it('passes Lighthouse budgets for all crawled URLs', function (): void {
 
     visit('/');
 
-    $result = new Factory()
-        ->path(dirname(__DIR__, 2))
-        ->env(['NODE_OPTIONS' => '--use-system-ca'])
-        ->timeout(600)
-        ->run(
-            ['npx', 'unlighthouse-ci', '--site', 'http://127.0.0.1:8080'],
-            fn (string $type, string $buffer) => fwrite($type === 'err' ? STDERR : STDOUT, $buffer),
-        );
-
-    expect($result->successful())->toBeTrue('Unlighthouse exited non-zero — a URL fell below budget.');
+    Lighthouse::for('http://127.0.0.1:8080')->run()->throw();
 })->group('lighthouse');
 ```
+
+`Lighthouse::for()` returns a chainable builder. Available options (all chained, then `->run()`):
+
+| Method | What it does |
+| --- | --- |
+| `budget(int $score)` | Single Lighthouse score floor (1–100) for every category via `--budget`. Per-category floors go in `unlighthouse.config.js`. |
+| `excludedUrls(array $urls)` | Paths (or regex) Unlighthouse should skip. Joined into `--exclude-urls`. |
+| `mobile()` / `desktop()` | Force the viewport. Default = whatever Unlighthouse picks. |
+| `samples(int $count)` | Number of Lighthouse runs to average per URL. Higher = more stable, slower. |
+| `configPath(string $path)` | Point at a non-default `unlighthouse.config.{js,ts,mjs}`. |
+| `timeout(?int $seconds)` | Subprocess wall-clock timeout. Default 600s; pass `null` to disable. |
+| `quietly()` | Suppress streaming output to STDOUT/STDERR. Output stays captured on the result. |
+
+`->run()` returns an `Illuminate\Contracts\Process\ProcessResult`. Call `->throw()` to bubble up a non-zero exit (budget failure) as an exception, or branch on `->successful()` / `->failed()` for richer handling.
 
 Tag it `lighthouse` and exclude it from the regular suite so iteration stays fast:
 

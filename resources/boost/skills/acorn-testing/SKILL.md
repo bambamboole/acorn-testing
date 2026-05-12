@@ -80,6 +80,41 @@ $pages = visit(['/', '/blog/', '/about/']);
 $pages->assertNoJavaScriptErrors()->assertNoConsoleLogs();
 ```
 
+## Running Lighthouse
+
+Use the `Lighthouse` builder from a tagged Pest browser test. It hides the subprocess wiring behind a chainable API:
+
+```php
+use Bambamboole\AcornTesting\Testing\Lighthouse;
+
+it('passes Lighthouse budgets', function (): void {
+    update_option('blog_public', 1);
+    update_option('blogdescription', 'Your tagline.');
+
+    visit('/');
+
+    Lighthouse::for('http://127.0.0.1:8080')->run()->throw();
+})->group('lighthouse');
+```
+
+Chainable options before `->run()`:
+- `budget(int)` — single score floor 1–100 for every category (per-category floors live in `unlighthouse.config.js`)
+- `excludedUrls(array)` — paths/regex to skip during crawl
+- `mobile()` / `desktop()` — force the viewport
+- `samples(int)` — Lighthouse runs to average per URL
+- `configPath(string)` — non-default Unlighthouse config
+- `timeout(?int)` — subprocess seconds, `null` to disable (default 600)
+- `quietly()` — suppress streaming output; still captured on the result
+
+`run()` returns an `Illuminate\Contracts\Process\ProcessResult`. `->throw()` bubbles a non-zero exit as an exception. For richer handling, branch on `->successful()` / `->failed()`.
+
+Tag the test `lighthouse` and exclude from the fast suite:
+
+```json
+"test:browser": "pest --testsuite=browser --exclude-group=lighthouse",
+"lighthouse": "pest tests/Browser/LighthouseTest.php"
+```
+
 ## Setup expectations
 
 - `composer install` pulls the package and its PHP deps (pest, pest-browser-plugin, illuminate/process).
