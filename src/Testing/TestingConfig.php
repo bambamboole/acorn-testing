@@ -4,33 +4,36 @@ declare(strict_types=1);
 
 namespace Bambamboole\AcornTesting\Testing;
 
+use Composer\InstalledVersions;
+use Illuminate\Config\Repository;
 use RuntimeException;
 
 /**
- * Minimal config loader for test-time use, before Acorn boots.
+ * Config loader for the narrow phase before Acorn has booted.
+ *
+ * `Bambamboole\AcornTesting\Testing\FeatureTestCase::setUpBeforeClass` has
+ * to know things like the seeder list and admin email before it can call
+ * `wp acorn db:seed`, which has to happen before the dump is built, which
+ * has to happen before WordPress (and therefore Acorn) can boot. This
+ * runs entirely without the Laravel container.
  *
  * Reads:
- *   1. The package's own `config/acorn-testing.php` for defaults.
- *   2. The consumer project's `config/acorn-testing.php` (if published).
- *   3. Two derived values: `dumpPath()` and `projectRoot()` (resolved by
- *      walking up from this file looking for `bedrock/application.php`).
+ *   1. Package defaults from `<package>/config/acorn-testing.php`
+ *   2. Consumer overrides from `<project>/config/acorn-testing.php`
+ *   (the consumer's file wins, per Laravel's `mergeConfigFrom` semantics)
  *
- * Once Acorn has booted you can still use the regular `config('acorn-testing.*')`
- * helper; this class exists for the narrow window before that's available.
+ * Once Acorn has booted you can use the regular `config('acorn-testing.*')`
+ * helper too — both read the same files; the values are identical.
  */
 final class TestingConfig
 {
-    /** @var array<string, mixed>|null */
-    private static ?array $config = null;
+    private static ?Repository $config = null;
 
     private static ?string $projectRoot = null;
 
-    /**
-     * @return mixed
-     */
     public static function get(string $key, mixed $default = null): mixed
     {
-        return self::config()[$key] ?? $default;
+        return self::config()->get($key, $default);
     }
 
     public static function projectRoot(): string
@@ -40,25 +43,19 @@ final class TestingConfig
         }
 
         $override = getenv('ACORN_TESTING_PROJECT_ROOT');
-        if (is_string($override) && $override !== '' && file_exists($override . '/bedrock/application.php')) {
-            return self::$projectRoot = $override;
+        if (is_string($override) && $override !== '') {
+            return self::$projectRoot = rtrim($override, '/');
         }
 
-        $dir = __DIR__;
-        while ($dir !== '/' && $dir !== '' && $dir !== '.') {
-            if (file_exists($dir . '/bedrock/application.php')) {
-                return self::$projectRoot = $dir;
-            }
-            $parent = dirname($dir);
-            if ($parent === $dir) {
-                break;
-            }
-            $dir = $parent;
+        $rootPath = InstalledVersions::getRootPackage()['install_path'] ?? null;
+        if (! is_string($rootPath) || $rootPath === '') {
+            throw new RuntimeException(
+                'Could not determine the project root via Composer\\InstalledVersions. '
+                . 'Set ACORN_TESTING_PROJECT_ROOT to override.',
+            );
         }
 
-        throw new RuntimeException(
-            'Could not locate the Bedrock project root (no bedrock/application.php found walking up from ' . __DIR__ . '). Set ACORN_TESTING_PROJECT_ROOT to override.',
-        );
+        return self::$projectRoot = rtrim((string) realpath($rootPath) ?: $rootPath, '/');
     }
 
     public static function dumpPath(): string
@@ -72,9 +69,17 @@ final class TestingConfig
     }
 
     /**
-     * @return array<string, mixed>
+     * Reset cached state. Test-use only.
+     *
+     * @internal
      */
-    private static function config(): array
+    public static function reset(): void
+    {
+        self::$config = null;
+        self::$projectRoot = null;
+    }
+
+    private static function config(): Repository
     {
         if (self::$config !== null) {
             return self::$config;
@@ -82,16 +87,12 @@ final class TestingConfig
 
         $defaults = require dirname(__DIR__, 2) . '/config/acorn-testing.php';
 
-        $projectConfig = self::projectRoot() . '/config/acorn-testing.php';
-        $project = file_exists($projectConfig) ? require $projectConfig : [];
+        $projectConfigFile = self::projectRoot() . '/config/acorn-testing.php';
+        $project = file_exists($projectConfigFile) ? require $projectConfigFile : [];
 
-        if (! is_array($defaults)) {
-            $defaults = [];
-        }
-        if (! is_array($project)) {
-            $project = [];
-        }
-
-        return self::$config = array_merge($defaults, $project);
+        return self::$config = new Repository(array_replace_recursive(
+            is_array($defaults) ? $defaults : [],
+            is_array($project) ? $project : [],
+        ));
     }
 }

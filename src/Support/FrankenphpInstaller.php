@@ -68,7 +68,9 @@ final class FrankenphpInstaller
 
         if (! $result->successful()) {
             $this->emit('Download failed: ' . trim($result->errorOutput()) . PHP_EOL);
-            @unlink($this->binaryPath);
+            if (is_file($this->binaryPath)) {
+                unlink($this->binaryPath);
+            }
 
             return false;
         }
