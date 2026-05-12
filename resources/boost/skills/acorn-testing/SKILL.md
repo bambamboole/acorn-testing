@@ -82,17 +82,14 @@ $pages->assertNoJavaScriptErrors()->assertNoConsoleLogs();
 
 ## Setup expectations
 
-- `composer install` pulls the package and its deps (pest, pest-browser-plugin, symfony/process).
-- The FrankenPHP binary auto-downloads on the first browser-test run; no manual step needed. To pre-warm:
-  ```bash
-  wp acorn frankenphp:install        # idempotent
-  wp acorn frankenphp:install --force # force re-download
-  ```
-- One-time per machine: `npx playwright install chromium`.
+- `composer install` pulls the package and its PHP deps (pest, pest-browser-plugin, illuminate/process).
+- `wp acorn testing:setup` provisions the full test environment in one shot: downloads FrankenPHP, adds `/frankenphp` + `.unlighthouse/` to `.gitignore`, installs `playwright` + `puppeteer` + `unlighthouse-ci` as npm dev-deps, runs `npx playwright install chromium`, publishes `unlighthouse.config.js`. Idempotent — re-run after pulling a new package version to pick up changes.
+- The FrankenPHP binary alone also auto-downloads on the first browser-test run, so `testing:setup` is mostly for the npm / Playwright / Unlighthouse pieces.
+- Flags: `--force` re-downloads the FrankenPHP binary; `--skip-npm` skips the Playwright/Unlighthouse install (useful in environments without Node).
 
 ## Troubleshooting
 
-- **"FrankenPHP install failed: …"** — the driver tried to download and curl exited non-zero. Check network / GitHub reachability. Try `wp acorn frankenphp:install --force`.
+- **"FrankenPHP install failed: …"** — the driver tried to download and curl exited non-zero. Check network / GitHub reachability. Try `wp acorn testing:setup --force`.
 - **"WP_HOME is not set"** — `.env.testing` is missing or `phpunit.xml`'s `<env force="true">` block isn't passing WP_HOME through.
 - **"FrankenPHP exited before becoming ready"** — the test DB isn't installed. Delete the dump file and re-run; the next run rebuilds.
 - **"did not start listening on 127.0.0.1:8080 within 30s"** — port 8080 is taken. Free it (`lsof -i :8080`) and re-run.
@@ -104,5 +101,5 @@ $pages->assertNoJavaScriptErrors()->assertNoConsoleLogs();
 - Putting a test in `tests/Unit/` that uses `App\Models\*` — Eloquent isn't booted there.
 - Overriding `setUpBeforeClass` in a Feature test and forgetting `parent::setUpBeforeClass()` — the static-guarded Acorn boot won't fire.
 - After pulling a branch that changes plugins, migrations, or seeders: `rm` the dump and let it rebuild.
-- Forgetting `npx playwright install chromium` on a fresh machine.
+- Skipping `wp acorn testing:setup` on a fresh checkout (it does the one-time Playwright + Unlighthouse provisioning).
 - Hardcoding `WordPressBaselineSeeder` or any specific class name — the package's test infrastructure is generic; the seeder list comes from `config('acorn-testing.seeders')`.

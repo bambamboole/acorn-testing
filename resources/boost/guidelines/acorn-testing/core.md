@@ -7,7 +7,7 @@ FrankenPHP-backed Pest browser testing for WordPress + Bedrock + Acorn projects.
 - `Bambamboole\AcornTesting\Testing\FeatureTestCase` — base case for feature tests. Boots WP+Acorn+Eloquent on demand, manages a baseline SQL dump, exposes a `seed()` helper.
 - `Bambamboole\AcornTesting\Testing\BrowserTestCase` — extends the feature base; spawns FrankenPHP and wires it into pest-plugin-browser.
 - `Bambamboole\AcornTesting\Testing\FrankenPhpDriver` — the actual `pest-plugin-browser` `HttpServer` driver. Auto-downloads the binary on first use if missing.
-- `wp acorn frankenphp:install [--force]` — ergonomic CLI alias for pre-warming or forcing a re-download of the binary.
+- `wp acorn testing:setup [--force] [--skip-npm]` — one-shot provisioning: FrankenPHP binary, `.gitignore`, npm dev-deps (playwright/puppeteer/unlighthouse-ci), Playwright Chromium, and a stubbed `unlighthouse.config.js`. Idempotent.
 
 ## Conventions when working in a project that uses this package
 
