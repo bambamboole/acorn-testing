@@ -27,7 +27,8 @@ use Throwable;
  * `<project root>/frankenphp`, gitignored). If it's missing when a browser
  * test runs — e.g. fresh clone, `git clean`, or CI cache miss — the driver
  * downloads it on the spot via Bambamboole\AcornTesting\Support\FrankenphpInstaller.
- * `wp acorn frankenphp:install [--force]` is the manual override.
+ * `wp acorn testing:setup [--force]` is the manual override that also
+ * provisions Playwright + Unlighthouse alongside the binary.
  */
 final class FrankenPhpDriver implements HttpServer
 {

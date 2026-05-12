@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Bambamboole\AcornTesting;
 
-use Bambamboole\AcornTesting\Console\Commands\FrankenphpInstallCommand;
+use Bambamboole\AcornTesting\Console\Commands\TestingSetupCommand;
 use Illuminate\Support\ServiceProvider;
 
 class AcornTestingServiceProvider extends ServiceProvider
@@ -20,7 +20,7 @@ class AcornTestingServiceProvider extends ServiceProvider
             return;
         }
 
-        $this->commands([FrankenphpInstallCommand::class]);
+        $this->commands([TestingSetupCommand::class]);
 
         $this->publishes(
             [__DIR__ . '/../config/acorn-testing.php' => $this->app->configPath('acorn-testing.php')],
