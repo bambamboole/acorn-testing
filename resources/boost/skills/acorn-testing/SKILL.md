@@ -95,7 +95,7 @@ it('passes Lighthouse budgets', function (): void {
 })->group('lighthouse');
 ```
 
-Two entry points: `Lighthouse::local()` bootstraps the FrankenPHP test server (same plumbing `visit()` uses) and auto-resolves the URL; `Lighthouse::remote('https://staging.example.com')` audits any explicit external URL without touching the local server.
+Two entry points: `Lighthouse::local()` reads the running `FrankenPhpDriver::active()` (started by `BrowserTestCase::setUpBeforeClass`), bootstraps it idempotently, and resolves the URL — no `visit()` call needed. `Lighthouse::remote('https://staging.example.com')` audits any explicit external URL without touching the local server.
 
 Chainable options before `->run()`:
 - `budget(int)` — single score floor 1–100 for every category (per-category floors live in `unlighthouse.config.js`)

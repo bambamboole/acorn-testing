@@ -74,13 +74,13 @@ it('passes Lighthouse budgets for all crawled URLs', function (): void {
     update_option('blog_public', 1);
     update_option('blogdescription', 'My project tagline.');
 
-    visit('/');
-
     Lighthouse::local()->run()->throw();
 })->group('lighthouse');
 ```
 
-`Lighthouse::local()` auto-bootstraps the FrankenPHP test server (same `ServerManager` plumbing `visit()` uses) and resolves its URL. For an explicit external target, use `Lighthouse::remote('https://staging.example.com')` — no local server is started; Unlighthouse only needs network access to the URL.
+`Lighthouse::local()` bootstraps the FrankenPHP test server (idempotent — the `BrowserTestCase` parent has typically already started it) and reads the URL from `FrankenPhpDriver::active()`. No `visit()` warm-up needed. The DB has already been re-imported from the seeded dump by `FeatureTestCase::setUp()` before your test method runs, so any `update_option()` calls you make right before `Lighthouse::local()` will be visible to FrankenPHP via the shared MySQL connection.
+
+For an explicit external target, use `Lighthouse::remote('https://staging.example.com')` — no local server is started; Unlighthouse only needs network access to the URL.
 
 Both entry points return a chainable builder. Available options (all chained, then `->run()`):
 
