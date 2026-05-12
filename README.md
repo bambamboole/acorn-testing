@@ -61,33 +61,74 @@ That's it. `composer test:browser` (or however your project runs Pest) will spaw
 
 ## Running the Lighthouse audit
 
-Wire up a single browser test that shells out to Unlighthouse — for example `tests/Browser/LighthouseTest.php`:
+Wire up a single browser test that uses the `Lighthouse` builder — for example `tests/Browser/LighthouseTest.php`:
 
 ```php
 <?php
 
 declare(strict_types=1);
 
-use Illuminate\Process\Factory;
+use Bambamboole\AcornTesting\Testing\Lighthouse;
 
 it('passes Lighthouse budgets for all crawled URLs', function (): void {
     update_option('blog_public', 1);
     update_option('blogdescription', 'My project tagline.');
 
-    visit('/');
-
-    $result = new Factory()
-        ->path(dirname(__DIR__, 2))
-        ->env(['NODE_OPTIONS' => '--use-system-ca'])
-        ->timeout(600)
-        ->run(
-            ['npx', 'unlighthouse-ci', '--site', 'http://127.0.0.1:8080'],
-            fn (string $type, string $buffer) => fwrite($type === 'err' ? STDERR : STDOUT, $buffer),
-        );
-
-    expect($result->successful())->toBeTrue('Unlighthouse exited non-zero — a URL fell below budget.');
+    Lighthouse::local()->run()->throw();
 })->group('lighthouse');
 ```
+
+`Lighthouse::local()` bootstraps the FrankenPHP test server (idempotent — the `BrowserTestCase` parent has typically already started it) and reads the URL from `FrankenPhpDriver::active()`. No `visit()` warm-up needed. The DB has already been re-imported from the seeded dump by `FeatureTestCase::setUp()` before your test method runs, so any `update_option()` calls you make right before `Lighthouse::local()` will be visible to FrankenPHP via the shared MySQL connection.
+
+> **`Lighthouse::local()` must be called from a `BrowserTestCase`-extending test.** It reads the active `FrankenPhpDriver` that `BrowserTestCase::setUpBeforeClass` registered. From outside that context (a plain Feature/Unit test, a CLI script), call `Lighthouse::remote('http://...')` with an explicit URL instead, or pass a `LocalServer` into `Lighthouse::local($server)` yourself.
+
+For an explicit external target, use `Lighthouse::remote('https://staging.example.com')` — no local server is started; Unlighthouse only needs network access to the URL.
+
+Both entry points return a chainable builder. Available options (all chained, then `->run()`):
+
+| Method | What it does |
+| --- | --- |
+| `budget(int $score)` | Single Lighthouse score floor (1–100) for every category via `--budget`. Per-category floors go in `unlighthouse.config.js`. |
+| `excludedUrls(array $urls)` | Paths (or regex) Unlighthouse should skip. Joined into `--exclude-urls`. |
+| `mobile()` / `desktop()` | Force the viewport. Default = whatever Unlighthouse picks. |
+| `samples(int $count)` | Number of Lighthouse runs to average per URL. Higher = more stable, slower. |
+| `configPath(string $path)` | Point at a non-default `unlighthouse.config.{js,ts,mjs}`. |
+| `timeout(?int $seconds)` | Subprocess wall-clock timeout. Default 600s; pass `null` to disable. |
+| `quietly()` | Suppress streaming output to STDOUT/STDERR. Output stays captured on the report. |
+
+### `LighthouseReport` — structured return
+
+`->run()` returns a `LighthouseReport` that wraps both the subprocess result and the per-URL audits parsed from Unlighthouse's `.unlighthouse/ci-result.json`:
+
+```php
+$report = Lighthouse::local()->run();
+
+// Pass/fail signal — same shape as Illuminate's ProcessResult
+$report->successful();
+$report->failed();
+$report->exitCode();
+$report->output();
+$report->errorOutput();
+$report->throw();   // RuntimeException on !successful, returns $report otherwise
+
+// Parsed audits (list<UrlAudit>) — one entry per URL Unlighthouse crawled
+foreach ($report->audits as $audit) {
+    echo $audit->path                  // '/blog/hello-world/'
+       . ' perf=' . $audit->performance // 0.97
+       . ' a11y=' . $audit->accessibility
+       . ' bp='   . $audit->bestPractices
+       . ' seo='  . $audit->seo
+       . ' avg='  . $audit->score
+       . "\n";
+}
+
+// Lookup helpers
+$report->audit('/');                   // ?UrlAudit by exact path
+$report->below('seo', 0.9);            // list<UrlAudit> with seo < 0.9
+$report->below('performance', 0.8);    // same shape, perf < 0.8
+```
+
+The `below(string $category, float $floor)` helper is convenient for assertions richer than "audit passed": e.g. fail the test if any URL's accessibility drops below 1.0 even when the overall budget is 0.95.
 
 Tag it `lighthouse` and exclude it from the regular suite so iteration stays fast:
 
@@ -100,7 +141,18 @@ Tag it `lighthouse` and exclude it from the regular suite so iteration stays fas
 
 ## Auditing a deployed environment (staging / production)
 
-The Pest test above audits the FrankenPHP-served test site — useful for catching regressions on every PR. To audit a **deployed** site (staging, production, preview build), skip the test entirely and invoke `unlighthouse-ci` directly with the deployed URL:
+`Lighthouse::remote($url)` is the equivalent for a deployed site. Same builder, same report, no local server boot — Unlighthouse just needs network access:
+
+```php
+use Bambamboole\AcornTesting\Testing\Lighthouse;
+
+Lighthouse::remote('https://staging.example.com')
+    ->budget(85)
+    ->run()
+    ->throw();
+```
+
+For one-off audits outside the Pest harness, the same flag set is available on the raw `unlighthouse-ci` CLI:
 
 ```bash
 # One-off (uses the local unlighthouse.config.js budgets)

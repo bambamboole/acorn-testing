@@ -80,6 +80,49 @@ $pages = visit(['/', '/blog/', '/about/']);
 $pages->assertNoJavaScriptErrors()->assertNoConsoleLogs();
 ```
 
+## Running Lighthouse
+
+Use the `Lighthouse` builder from a tagged Pest browser test. It hides the subprocess wiring behind a chainable API:
+
+```php
+use Bambamboole\AcornTesting\Testing\Lighthouse;
+
+it('passes Lighthouse budgets', function (): void {
+    update_option('blog_public', 1);
+    update_option('blogdescription', 'Your tagline.');
+
+    Lighthouse::local()->run()->throw();
+})->group('lighthouse');
+```
+
+Two entry points: `Lighthouse::local()` reads the running `FrankenPhpDriver::active()` (started by `BrowserTestCase::setUpBeforeClass`), bootstraps it idempotently, and resolves the URL — no `visit()` call needed. `Lighthouse::remote('https://staging.example.com')` audits any explicit external URL without touching the local server.
+
+Chainable options before `->run()`:
+- `budget(int)` — single score floor 1–100 for every category (per-category floors live in `unlighthouse.config.js`)
+- `excludedUrls(array)` — paths/regex to skip during crawl
+- `mobile()` / `desktop()` — force the viewport
+- `samples(int)` — Lighthouse runs to average per URL
+- `configPath(string)` — non-default Unlighthouse config
+- `timeout(?int)` — subprocess seconds, `null` to disable (default 600)
+- `quietly()` — suppress streaming output; still captured on the result
+
+`run()` returns a `LighthouseReport`. It wraps the subprocess (`successful()`, `failed()`, `exitCode()`, `output()`, `errorOutput()`, `throw()`) AND the parsed per-URL audits from `.unlighthouse/ci-result.json`:
+
+```php
+$report->audits;                       // list<UrlAudit> — path + score per category
+$report->audit('/blog/');              // ?UrlAudit by exact path
+$report->below('seo', 0.9);            // list<UrlAudit> where seo < 0.9
+```
+
+`UrlAudit` is a readonly value object with: `path`, `score` (average), `performance`, `accessibility`, `bestPractices`, `seo`. Use `below()` for richer-than-"audit-passed" assertions (e.g. tighten Accessibility individually).
+
+Tag the test `lighthouse` and exclude from the fast suite:
+
+```json
+"test:browser": "pest --testsuite=browser --exclude-group=lighthouse",
+"lighthouse": "pest tests/Browser/LighthouseTest.php"
+```
+
 ## Setup expectations
 
 - `composer install` pulls the package and its PHP deps (pest, pest-browser-plugin, illuminate/process).

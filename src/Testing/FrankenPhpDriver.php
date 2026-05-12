@@ -30,8 +30,10 @@ use Throwable;
  * `wp acorn testing:setup [--force]` is the manual override that also
  * provisions Playwright + Unlighthouse alongside the binary.
  */
-final class FrankenPhpDriver implements HttpServer
+final class FrankenPhpDriver implements HttpServer, LocalServer
 {
+    private static ?self $active = null;
+
     private ?InvokedProcess $invoked = null;
 
     private readonly Factory $process;
@@ -47,9 +49,26 @@ final class FrankenPhpDriver implements HttpServer
         $this->process = $process ?? new Factory();
     }
 
+    /**
+     * The most recently started driver instance, set in `start()` and cleared
+     * in `stop()`. Lighthouse::local() reads this so it doesn't have to go
+     * through pest-plugin-browser's @internal ServerManager.
+     */
+    public static function active(): ?self
+    {
+        return self::$active;
+    }
+
+    public function url(): string
+    {
+        return sprintf('http://%s:%d', $this->host, $this->port);
+    }
+
     public function start(): void
     {
         if ($this->isRunning()) {
+            self::$active = $this;
+
             return;
         }
 
@@ -81,6 +100,7 @@ final class FrankenPhpDriver implements HttpServer
             $sock = @fsockopen($this->host, $this->port, $errno, $errstr, 0.5);
             if ($sock !== false) {
                 fclose($sock);
+                self::$active = $this;
 
                 return;
             }
@@ -125,6 +145,10 @@ final class FrankenPhpDriver implements HttpServer
         }
 
         $this->invoked = null;
+
+        if (self::$active === $this) {
+            self::$active = null;
+        }
     }
 
     public function bootstrap(): void
