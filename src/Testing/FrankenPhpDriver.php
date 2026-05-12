@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace Bambamboole\AcornTesting\Testing;
 
 use Bambamboole\AcornTesting\Support\FrankenphpInstaller;
+use Illuminate\Process\Factory;
+use Illuminate\Process\InvokedProcess;
 use Pest\Browser\Contracts\HttpServer;
 use RuntimeException;
-use Symfony\Component\Process\Process;
 use Throwable;
 
 /**
@@ -30,7 +31,9 @@ use Throwable;
  */
 final class FrankenPhpDriver implements HttpServer
 {
-    private ?Process $process = null;
+    private ?InvokedProcess $invoked = null;
+
+    private readonly Factory $process;
 
     public function __construct(
         private readonly string $host,
@@ -38,7 +41,10 @@ final class FrankenPhpDriver implements HttpServer
         private readonly string $projectRoot,
         private readonly string $webroot = 'public',
         private readonly string $binaryPath = '',
-    ) {}
+        ?Factory $process = null,
+    ) {
+        $this->process = $process ?? new Factory();
+    }
 
     public function start(): void
     {
@@ -52,19 +58,22 @@ final class FrankenPhpDriver implements HttpServer
             $this->installBinary($binary);
         }
 
-        // Symfony Process merges this env on top of the parent process env
-        // (Process::getDefaultEnv() reads via getenv(), so phpunit.xml's
-        // <env force="true"> entries — DB_NAME, WP_HOME, WP_SITEURL — flow
-        // through automatically). Only WP_ENV needs an explicit override
-        // since it triggers the right Bedrock environment.
-        $this->process = new Process(
-            [$binary, 'php-server', '--listen', $this->host . ':' . $this->port, '--root', $this->webroot],
-            $this->projectRoot,
-            ['WP_ENV' => 'testing'],
-        );
-        $this->process->setTimeout(null);
-        $this->process->disableOutput();
-        $this->process->start();
+        // path() sets cwd; env() adds WP_ENV on top of the parent process env;
+        // forever() removes the timeout; quietly() disables in-memory output
+        // capture (server runs indefinitely, no point accumulating its log).
+        $this->invoked = $this->process
+            ->path($this->projectRoot)
+            ->env(['WP_ENV' => 'testing'])
+            ->forever()
+            ->quietly()
+            ->start([
+                $binary,
+                'php-server',
+                '--listen',
+                $this->host . ':' . $this->port,
+                '--root',
+                $this->webroot,
+            ]);
 
         $deadline = microtime(true) + 30.0;
         while (microtime(true) < $deadline) {
@@ -75,10 +84,10 @@ final class FrankenPhpDriver implements HttpServer
                 return;
             }
 
-            if (! $this->process->isRunning()) {
+            if (! $this->invoked->running()) {
                 throw new RuntimeException(sprintf(
                     'FrankenPHP exited before becoming ready (exit %d).',
-                    (int) $this->process->getExitCode(),
+                    (int) ($this->invoked->predictedExitCode() ?? -1),
                 ));
             }
 
@@ -96,10 +105,25 @@ final class FrankenPhpDriver implements HttpServer
 
     public function stop(): void
     {
-        if ($this->process !== null) {
-            $this->process->stop(1);
-            $this->process = null;
+        if ($this->invoked === null) {
+            return;
         }
+
+        $this->invoked->signal(SIGTERM);
+
+        // Give FrankenPHP up to 1s to shut down cleanly, then SIGKILL.
+        // Without the wait, the next test invocation can race the OS releasing
+        // the port (TIME_WAIT) and fail to bind.
+        $deadline = microtime(true) + 1.0;
+        while (microtime(true) < $deadline && $this->invoked->running()) {
+            usleep(50_000);
+        }
+
+        if ($this->invoked->running()) {
+            $this->invoked->signal(SIGKILL);
+        }
+
+        $this->invoked = null;
     }
 
     public function bootstrap(): void
@@ -135,7 +159,7 @@ final class FrankenPhpDriver implements HttpServer
 
     private function isRunning(): bool
     {
-        return $this->process !== null && $this->process->isRunning();
+        return $this->invoked !== null && $this->invoked->running();
     }
 
     private function installBinary(string $binary): void
@@ -148,6 +172,7 @@ final class FrankenPhpDriver implements HttpServer
             onOutput: static function (string $line) use (&$log): void {
                 $log .= $line;
             },
+            process: $this->process,
         );
 
         if (! $installer->install()) {

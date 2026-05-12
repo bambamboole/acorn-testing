@@ -4,15 +4,17 @@ declare(strict_types=1);
 
 namespace Bambamboole\AcornTesting\Support;
 
+use Illuminate\Process\Factory;
 use RuntimeException;
-use Symfony\Component\Process\Process;
 
 /**
  * Downloads the pinned FrankenPHP binary used by browser tests.
  *
- * Deliberately framework-agnostic: no Acorn, no Laravel, no WordPress.
- * That lets us invoke it from a test driver before any framework boot
- * has happened.
+ * Uses Illuminate\Process\Factory directly (no facade), so it works in
+ * contexts where Laravel/Acorn isn't booted yet — notably the
+ * pre-Acorn-boot phase of FeatureTestCase::ensureTestDatabaseInstalled,
+ * and the FrankenPhpDriver's auto-install path on the first browser
+ * test of a fresh checkout.
  *
  * v1.11.2 bundles PHP 8.4.18 — the last 1.x release before v1.11.3
  * switched to PHP 8.5. Bump VERSION when a newer 8.4-line release ships.
@@ -21,12 +23,17 @@ final class FrankenphpInstaller
 {
     public const string VERSION = 'v1.11.2';
 
+    private readonly Factory $process;
+
     public function __construct(
         private readonly string $binaryPath,
         private readonly bool $force = false,
         /** @var (callable(string): void)|null */
         private $onOutput = null,
-    ) {}
+        ?Factory $process = null,
+    ) {
+        $this->process = $process ?? new Factory();
+    }
 
     public function install(): bool
     {
@@ -50,15 +57,17 @@ final class FrankenphpInstaller
 
         $this->emit(sprintf('Downloading %s → %s', $asset, $this->binaryPath) . PHP_EOL);
 
-        $download = new Process(['curl', '-fSL', '--progress-bar', $url, '-o', $this->binaryPath]);
-        $download->setTimeout(300);
-        $download->start();
-        $download->wait(function ($type, $buffer): void {
-            $this->emit($buffer);
-        });
+        $result = $this->process
+            ->timeout(300)
+            ->run(
+                ['curl', '-fSL', '--progress-bar', $url, '-o', $this->binaryPath],
+                function (string $type, string $buffer): void {
+                    $this->emit($buffer);
+                },
+            );
 
-        if (! $download->isSuccessful()) {
-            $this->emit('Download failed: ' . trim($download->getErrorOutput()) . PHP_EOL);
+        if (! $result->successful()) {
+            $this->emit('Download failed: ' . trim($result->errorOutput()) . PHP_EOL);
             @unlink($this->binaryPath);
 
             return false;
@@ -103,14 +112,13 @@ final class FrankenphpInstaller
             return null;
         }
 
-        $process = new Process([$this->binaryPath, 'version']);
-        $process->run();
+        $result = $this->process->run([$this->binaryPath, 'version']);
 
-        if (! $process->isSuccessful()) {
+        if (! $result->successful()) {
             return null;
         }
 
-        return $process->getOutput();
+        return $result->output();
     }
 
     /**
@@ -152,9 +160,6 @@ final class FrankenphpInstaller
      */
     private function detectGnuSuffix(): string
     {
-        $process = new Process(['getconf', 'GNU_LIBC_VERSION']);
-        $process->run();
-
-        return $process->isSuccessful() ? '-gnu' : '';
+        return $this->process->run(['getconf', 'GNU_LIBC_VERSION'])->successful() ? '-gnu' : '';
     }
 }

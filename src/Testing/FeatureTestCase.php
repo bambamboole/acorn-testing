@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Bambamboole\AcornTesting\Testing;
 
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Process\Factory;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
-use Symfony\Component\Process\Process;
 
 /**
  * Base test case for Feature tests in WordPress + Bedrock + Acorn projects.
@@ -25,6 +25,7 @@ class FeatureTestCase extends TestCase
 {
     private static bool $acornBooted = false;
     private static bool $testDatabaseInstalled = false;
+    private static ?Factory $processFactory = null;
 
     public static function setUpBeforeClass(): void
     {
@@ -113,13 +114,11 @@ class FeatureTestCase extends TestCase
         @mkdir(dirname($dumpPath), recursive: true);
 
         // wp db drop fails if the DB doesn't exist; ignore its exit code.
-        $drop = new Process(
-            ['wp', 'db', 'drop', '--yes'],
-            cwd: TestingConfig::projectRoot(),
-            env: self::testEnv(),
-            timeout: 60,
-        );
-        $drop->run();
+        self::process()
+            ->path(TestingConfig::projectRoot())
+            ->env(self::testEnv())
+            ->timeout(60)
+            ->run(['wp', 'db', 'drop', '--yes']);
 
         self::runWpCli(['db', 'create']);
         self::runWpCli([
@@ -166,8 +165,17 @@ class FeatureTestCase extends TestCase
      */
     private static function runShell(array $cmd): void
     {
-        $process = new Process($cmd, cwd: TestingConfig::projectRoot(), env: self::testEnv(), timeout: 300);
-        $process->mustRun();
+        self::process()
+            ->path(TestingConfig::projectRoot())
+            ->env(self::testEnv())
+            ->timeout(300)
+            ->run($cmd)
+            ->throw();
+    }
+
+    private static function process(): Factory
+    {
+        return self::$processFactory ??= new Factory();
     }
 
     /**
