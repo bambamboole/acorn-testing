@@ -98,6 +98,32 @@ Tag it `lighthouse` and exclude it from the regular suite so iteration stays fas
 
 `composer lighthouse` runs only the audit (~60s). Adjust budgets in `unlighthouse.config.js`.
 
+## Auditing a deployed environment (staging / production)
+
+The Pest test above audits the FrankenPHP-served test site — useful for catching regressions on every PR. To audit a **deployed** site (staging, production, preview build), skip the test entirely and invoke `unlighthouse-ci` directly with the deployed URL:
+
+```bash
+# One-off (uses the local unlighthouse.config.js budgets)
+npx unlighthouse-ci --site https://staging.example.com
+
+# Or via env var so the config file's `process.env.UNLIGHTHOUSE_SITE` picks it up
+UNLIGHTHOUSE_SITE=https://staging.example.com npx unlighthouse-ci
+```
+
+Wire it as a composer/npm script if you do this often:
+
+```json
+"lighthouse:staging": "UNLIGHTHOUSE_SITE=https://staging.example.com npx unlighthouse-ci",
+"lighthouse:production": "UNLIGHTHOUSE_SITE=https://example.com npx unlighthouse-ci"
+```
+
+Practical notes for non-local audits:
+- **Basic auth** (common on staging): `npx unlighthouse-ci --site https://staging.example.com --auth user:pass`.
+- **Cookies / headers** (logged-in audits, feature flags): `--cookies "key=value;key2=value2"` and `--extra-headers "X-Feature=on,X-Other=bar"`.
+- **Sitemap fast-path**: if your site exposes one, `--sitemaps /sitemap.xml` skips link-crawl and audits exactly what's listed.
+- **CI against staging on every deploy**: same pattern, just point at the staging URL in your post-deploy workflow. No FrankenPHP, no test DB — Unlighthouse only needs network access to the deployed URL.
+- **Budgets are shared**: the same `unlighthouse.config.js` `ci.budget` block applies to whichever site you point at. A regression on staging fails the same way a regression on the local audit does.
+
 ## CI integration
 
 Cache the binary across runs. Example for GitHub Actions:

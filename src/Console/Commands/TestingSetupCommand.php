@@ -67,8 +67,13 @@ class TestingSetupCommand extends Command
     {
         $this->line('• FrankenPHP binary');
 
+        // The config key is intentionally nullable (env-driven). When unset,
+        // resolve to the project-root default — same pattern as FrankenPhpDriver.
+        $configured = (string) config('acorn-testing.frankenphp_binary', '');
+        $binaryPath = $configured !== '' ? $configured : $root . '/frankenphp';
+
         $installer = new FrankenphpInstaller(
-            binaryPath: (string) config('acorn-testing.frankenphp_binary', $root . '/frankenphp'),
+            binaryPath: $binaryPath,
             force: (bool) $this->option('force'),
             onOutput: fn (string $line) => $this->output->write($line),
         );
