@@ -106,7 +106,15 @@ Chainable options before `->run()`:
 - `timeout(?int)` — subprocess seconds, `null` to disable (default 600)
 - `quietly()` — suppress streaming output; still captured on the result
 
-`run()` returns an `Illuminate\Contracts\Process\ProcessResult`. `->throw()` bubbles a non-zero exit as an exception. For richer handling, branch on `->successful()` / `->failed()`.
+`run()` returns a `LighthouseReport`. It wraps the subprocess (`successful()`, `failed()`, `exitCode()`, `output()`, `errorOutput()`, `throw()`) AND the parsed per-URL audits from `.unlighthouse/ci-result.json`:
+
+```php
+$report->audits;                       // list<UrlAudit> — path + score per category
+$report->audit('/blog/');              // ?UrlAudit by exact path
+$report->below('seo', 0.9);            // list<UrlAudit> where seo < 0.9
+```
+
+`UrlAudit` is a readonly value object with: `path`, `score` (average), `performance`, `accessibility`, `bestPractices`, `seo`. Use `below()` for richer-than-"audit-passed" assertions (e.g. tighten Accessibility individually).
 
 Tag the test `lighthouse` and exclude from the fast suite:
 

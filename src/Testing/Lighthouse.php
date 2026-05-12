@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Bambamboole\AcornTesting\Testing;
 
-use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\Factory;
 
 /**
@@ -133,7 +132,7 @@ final class Lighthouse
         return $this;
     }
 
-    public function run(?Factory $process = null): ProcessResult
+    public function run(?Factory $process = null): LighthouseReport
     {
         $process ??= new Factory();
 
@@ -143,11 +142,44 @@ final class Lighthouse
             }
             : null;
 
-        return $process
-            ->path(TestingConfig::projectRoot())
+        $root = TestingConfig::projectRoot();
+
+        $result = $process
+            ->path($root)
             ->env(['NODE_OPTIONS' => '--use-system-ca'])
             ->timeout($this->timeout)
             ->run($this->command(), $callback);
+
+        return new LighthouseReport($result, $this->parseAudits($root));
+    }
+
+    /**
+     * Read the per-URL audits Unlighthouse writes to
+     * `<root>/.unlighthouse/ci-result.json`. Returns an empty list if the
+     * file doesn't exist (e.g. Unlighthouse exited before writing it) or
+     * isn't valid JSON.
+     *
+     * @return list<UrlAudit>
+     */
+    private function parseAudits(string $root): array
+    {
+        $path = $root . '/.unlighthouse/ci-result.json';
+
+        if (! is_file($path)) {
+            return [];
+        }
+
+        $contents = (string) file_get_contents($path);
+        $decoded = json_decode($contents, true);
+
+        if (! is_array($decoded)) {
+            return [];
+        }
+
+        return array_values(array_map(
+            static fn (mixed $entry): UrlAudit => UrlAudit::fromArray(is_array($entry) ? $entry : []),
+            $decoded,
+        ));
     }
 
     /**

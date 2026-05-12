@@ -90,9 +90,41 @@ it('passes Lighthouse budgets for all crawled URLs', function (): void {
 | `samples(int $count)` | Number of Lighthouse runs to average per URL. Higher = more stable, slower. |
 | `configPath(string $path)` | Point at a non-default `unlighthouse.config.{js,ts,mjs}`. |
 | `timeout(?int $seconds)` | Subprocess wall-clock timeout. Default 600s; pass `null` to disable. |
-| `quietly()` | Suppress streaming output to STDOUT/STDERR. Output stays captured on the result. |
+| `quietly()` | Suppress streaming output to STDOUT/STDERR. Output stays captured on the report. |
 
-`->run()` returns an `Illuminate\Contracts\Process\ProcessResult`. Call `->throw()` to bubble up a non-zero exit (budget failure) as an exception, or branch on `->successful()` / `->failed()` for richer handling.
+### `LighthouseReport` — structured return
+
+`->run()` returns a `LighthouseReport` that wraps both the subprocess result and the per-URL audits parsed from Unlighthouse's `.unlighthouse/ci-result.json`:
+
+```php
+$report = Lighthouse::for('http://127.0.0.1:8080')->run();
+
+// Pass/fail signal — same shape as Illuminate's ProcessResult
+$report->successful();
+$report->failed();
+$report->exitCode();
+$report->output();
+$report->errorOutput();
+$report->throw();   // RuntimeException on !successful, returns $report otherwise
+
+// Parsed audits (list<UrlAudit>) — one entry per URL Unlighthouse crawled
+foreach ($report->audits as $audit) {
+    echo $audit->path                  // '/blog/hello-world/'
+       . ' perf=' . $audit->performance // 0.97
+       . ' a11y=' . $audit->accessibility
+       . ' bp='   . $audit->bestPractices
+       . ' seo='  . $audit->seo
+       . ' avg='  . $audit->score
+       . "\n";
+}
+
+// Lookup helpers
+$report->audit('/');                   // ?UrlAudit by exact path
+$report->below('seo', 0.9);            // list<UrlAudit> with seo < 0.9
+$report->below('performance', 0.8);    // same shape, perf < 0.8
+```
+
+The `below(string $category, float $floor)` helper is convenient for assertions richer than "audit passed": e.g. fail the test if any URL's accessibility drops below 1.0 even when the overall budget is 0.95.
 
 Tag it `lighthouse` and exclude it from the regular suite so iteration stays fast:
 
