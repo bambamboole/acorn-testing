@@ -1,0 +1,47 @@
+{
+    "name": "bambamboole/acorn-testing",
+    "description": "FrankenPHP-backed Pest browser testing infrastructure for WordPress + Bedrock + Acorn projects.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": [
+        "wordpress",
+        "bedrock",
+        "acorn",
+        "pest",
+        "frankenphp",
+        "testing"
+    ],
+    "authors": [
+        {
+            "name": "Manuel Christlieb",
+            "email": "manuel@christlieb.eu",
+            "homepage": "https://github.com/bambamboole"
+        }
+    ],
+    "require": {
+        "php": "^8.4",
+        "roots/acorn": "^6.1",
+        "pestphp/pest": "^4.0",
+        "pestphp/pest-plugin-browser": "^4.0",
+        "symfony/process": "^7.0 || ^8.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Bambamboole\\AcornTesting\\": "src/"
+        }
+    },
+    "extra": {
+        "acorn": {
+            "providers": [
+                "Bambamboole\\AcornTesting\\AcornTestingServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    }
+}
