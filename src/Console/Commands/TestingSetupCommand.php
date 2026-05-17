@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Bambamboole\AcornTesting\Console\Commands;
 
 use Bambamboole\AcornTesting\Support\FrankenphpInstaller;
+use Bambamboole\AcornTesting\Support\PackageManager;
 use Illuminate\Console\Command;
 use Illuminate\Process\Factory as Process;
 
@@ -12,11 +13,11 @@ class TestingSetupCommand extends Command
 {
     protected $signature = 'testing:setup
         {--force : Force-redownload the FrankenPHP binary even if the pinned version is already installed}
-        {--skip-npm : Skip the npm install + Playwright/Unlighthouse setup}';
+        {--skip-npm : Skip the dev-dependency install + Playwright/Unlighthouse setup (alias kept for backwards compat — also skips yarn/pnpm when those are detected)}';
 
     protected $description = 'Provision the test environment: FrankenPHP binary, .gitignore entries, Playwright, Unlighthouse.';
 
-    private const NPM_DEV_DEPS = [
+    private const JS_DEV_DEPS = [
         // Pest browser tests use Playwright under the hood.
         'playwright',
         // Unlighthouse uses Puppeteer to drive headless Chrome for the audit.
@@ -43,10 +44,12 @@ class TestingSetupCommand extends Command
 
         $this->ensureGitignore($root);
 
+        $pm = PackageManager::detect($root);
+
         if ($this->option('skip-npm')) {
-            $this->line('  Skipping npm + Playwright + Unlighthouse setup (--skip-npm).');
+            $this->line('  Skipping ' . $pm->name() . ' + Playwright + Unlighthouse setup (--skip-npm).');
         } else {
-            if (! $this->installNpmDeps($root)) {
+            if (! $this->installJsDeps($root, $pm)) {
                 return self::FAILURE;
             }
 
@@ -110,13 +113,13 @@ class TestingSetupCommand extends Command
         }
     }
 
-    private function installNpmDeps(string $root): bool
+    private function installJsDeps(string $root, PackageManager $pm): bool
     {
-        $this->line('• npm dev dependencies (' . implode(', ', self::NPM_DEV_DEPS) . ')');
+        $this->line('• ' . $pm->name() . ' dev dependencies (' . implode(', ', self::JS_DEV_DEPS) . ')');
 
         $package = $this->readPackageJson($root);
         $declared = array_keys(($package['devDependencies'] ?? []) + ($package['dependencies'] ?? []));
-        $missing = array_values(array_diff(self::NPM_DEV_DEPS, $declared));
+        $missing = array_values(array_diff(self::JS_DEV_DEPS, $declared));
 
         if ($missing === []) {
             $this->line('  All packages already declared in package.json.');
@@ -130,12 +133,12 @@ class TestingSetupCommand extends Command
             ->path($root)
             ->timeout(600)
             ->run(
-                array_merge(['npm', 'install', '--save-dev'], $missing),
+                $pm->addDev($missing),
                 fn (string $type, string $buffer) => $this->output->write($buffer),
             );
 
         if (! $result->successful()) {
-            $this->error('  npm install failed.');
+            $this->error('  ' . $pm->name() . ' install failed.');
 
             return false;
         }
