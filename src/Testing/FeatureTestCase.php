@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Bambamboole\AcornTesting\Testing;
 
+use Bambamboole\AcornTesting\Support\PackageManager;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Process\Factory;
 use PHPUnit\Framework\TestCase;
@@ -96,7 +97,7 @@ class FeatureTestCase extends TestCase
         }
 
         if (! file_exists(TestingConfig::projectRoot() . '/public/build/manifest.json')) {
-            self::runShell(['npm', 'run', 'build']);
+            self::runShell(PackageManager::detect(TestingConfig::projectRoot())->runScript('build'));
         }
 
         // Guarantee the DB matches the dump before WordPress boots in-process.
