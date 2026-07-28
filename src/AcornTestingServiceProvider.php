@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Bambamboole\AcornTesting;
 
+use Bambamboole\AcornTesting\Console\Commands\CaptureBaselineCommand;
 use Bambamboole\AcornTesting\Console\Commands\TestingSetupCommand;
 use Illuminate\Support\ServiceProvider;
 
@@ -20,7 +21,7 @@ class AcornTestingServiceProvider extends ServiceProvider
             return;
         }
 
-        $this->commands([TestingSetupCommand::class]);
+        $this->commands([TestingSetupCommand::class, CaptureBaselineCommand::class]);
 
         $this->publishes(
             [__DIR__ . '/../config/acorn-testing.php' => $this->app->configPath('acorn-testing.php')],

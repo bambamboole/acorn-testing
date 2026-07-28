@@ -20,7 +20,7 @@ use RuntimeException;
  * Reads:
  *   1. Package defaults from `<package>/config/acorn-testing.php`
  *   2. Consumer overrides from `<project>/config/acorn-testing.php`
- *   (the consumer's file wins, per Laravel's `mergeConfigFrom` semantics)
+ *   (each key the consumer defines replaces the default outright)
  *
  * Once Acorn has booted you can use the regular `config('acorn-testing.*')`
  * helper too — both read the same files; the values are identical.
@@ -68,6 +68,52 @@ final class TestingConfig
         return self::projectRoot() . '/database/dumps/testing.sql';
     }
 
+    public static function buildCommand(): ?string
+    {
+        $configured = self::get('build_command');
+
+        return is_string($configured) && $configured !== '' ? $configured : null;
+    }
+
+    /** @return list<string> */
+    public static function watchPaths(): array
+    {
+        $configured = self::get('watch_paths', []);
+
+        return is_array($configured) ? array_values(array_filter($configured, 'is_string')) : [];
+    }
+
+    /** @return list<string> */
+    public static function protectedTables(): array
+    {
+        $configured = self::get('protected_tables');
+
+        if (! is_array($configured)) {
+            return ['options', 'users', 'usermeta', 'migrations', 'terms', 'term_taxonomy', 'termmeta'];
+        }
+
+        return array_values(array_filter($configured, 'is_string'));
+    }
+
+    /** @return array<string, string> table name => column holding the owning object id */
+    public static function scopedTables(): array
+    {
+        $configured = self::get('scoped_tables');
+
+        if (! is_array($configured)) {
+            return [];
+        }
+
+        return array_filter($configured, static fn ($v, $k): bool => is_string($k) && is_string($v), ARRAY_FILTER_USE_BOTH);
+    }
+
+    public static function baselineOption(): string
+    {
+        $configured = self::get('baseline_option');
+
+        return is_string($configured) && $configured !== '' ? $configured : 'acorn_testing_baseline_ids';
+    }
+
     /**
      * Reset cached state. Test-use only.
      *
@@ -90,7 +136,12 @@ final class TestingConfig
         $projectConfigFile = self::projectRoot() . '/config/acorn-testing.php';
         $project = file_exists($projectConfigFile) ? require $projectConfigFile : [];
 
-        return self::$config = new Repository(array_replace_recursive(
+        // Shallow, not recursive: every key the consumer defines replaces the
+        // default outright. array_replace_recursive cannot shrink or clear a
+        // list — `'watch_paths' => []` would keep the defaults, and narrowing
+        // `scoped_tables` would silently retain the entries left out. Every key
+        // here is a scalar or a flat list, so there is nothing to merge into.
+        return self::$config = new Repository(array_replace(
             is_array($defaults) ? $defaults : [],
             is_array($project) ? $project : [],
         ));
