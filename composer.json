@@ -24,7 +24,8 @@
         "pestphp/pest": "^4.0",
         "pestphp/pest-plugin-browser": "^4.0",
         "illuminate/config": "^11.0 || ^12.0 || ^13.0",
-        "illuminate/process": "^11.0 || ^12.0 || ^13.0"
+        "illuminate/process": "^11.0 || ^12.0 || ^13.0",
+        "illuminate/testing": "^11.0 || ^12.0 || ^13.0"
     },
     "autoload": {
         "psr-4": {

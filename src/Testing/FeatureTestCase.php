@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Bambamboole\AcornTesting\Testing;
 
 use Bambamboole\AcornTesting\Support\PackageManager;
+use Bambamboole\AcornTesting\Testing\Concerns\MakesHttpRequests;
 use Bambamboole\AcornTesting\Testing\Concerns\ResetsDatabase;
+use Illuminate\Container\Container;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Process\Factory;
 use PHPUnit\Framework\TestCase;
@@ -25,7 +27,11 @@ use RuntimeException;
  */
 class FeatureTestCase extends TestCase
 {
+    use MakesHttpRequests;
     use ResetsDatabase;
+
+    /** The trait's request helpers resolve the HTTP kernel through this. */
+    protected Container $app;
 
     private static bool $acornBooted = false;
     private static bool $testDatabaseInstalled = false;
@@ -46,6 +52,12 @@ class FeatureTestCase extends TestCase
     protected function seed(string $seederClass): void
     {
         new $seederClass()->run();
+    }
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->app = Container::getInstance();
     }
 
     protected function tearDown(): void
