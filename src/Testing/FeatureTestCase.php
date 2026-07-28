@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Bambamboole\AcornTesting\Testing;
 
 use Bambamboole\AcornTesting\Support\PackageManager;
+use Bambamboole\AcornTesting\Testing\Concerns\ResetsDatabase;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Process\Factory;
 use PHPUnit\Framework\TestCase;
@@ -24,6 +25,8 @@ use RuntimeException;
  */
 class FeatureTestCase extends TestCase
 {
+    use ResetsDatabase;
+
     private static bool $acornBooted = false;
     private static bool $testDatabaseInstalled = false;
     private static ?Factory $processFactory = null;
@@ -45,11 +48,10 @@ class FeatureTestCase extends TestCase
         new $seederClass()->run();
     }
 
-    protected function setUp(): void
+    protected function tearDown(): void
     {
-        parent::setUp();
-        self::runWpCli(['db', 'import', TestingConfig::dumpPath()]);
-        wp_cache_flush();
+        $this->resetDatabase();
+        parent::tearDown();
     }
 
     private static function ensureAcornBooted(): void
@@ -94,6 +96,17 @@ class FeatureTestCase extends TestCase
 
         if (! file_exists(TestingConfig::dumpPath())) {
             self::buildTestDatabaseDump();
+        } elseif (self::dumpIsStale()) {
+            throw new RuntimeException(sprintf(
+                "The test database dump is older than the code that builds it.\n"
+                . "  dump:    %s\n"
+                . "  newer:   %s\n\n"
+                . 'Rebuild it with `%s`, or set `watch_paths` to [] in config/acorn-testing.php '
+                . 'to opt out of this check.',
+                TestingConfig::dumpPath(),
+                self::newestWatchedFile() ?? '(unknown)',
+                TestingConfig::buildCommand() ?? 'wp acorn db:seed',
+            ));
         }
 
         if (! file_exists(TestingConfig::projectRoot() . '/public/build/manifest.json')) {
@@ -109,10 +122,62 @@ class FeatureTestCase extends TestCase
         self::$testDatabaseInstalled = true;
     }
 
+    /**
+     * The dump on disk is authoritative and is re-imported before the suite
+     * runs, so without this an edited seeder silently tests the previous world.
+     */
+    private static function dumpIsStale(): bool
+    {
+        $newest = self::newestWatchedFile();
+
+        return $newest !== null && filemtime($newest) > filemtime(TestingConfig::dumpPath());
+    }
+
+    private static function newestWatchedFile(): ?string
+    {
+        $newest = null;
+        $newestTime = 0;
+
+        foreach (TestingConfig::watchPaths() as $pattern) {
+            $absolute = str_starts_with($pattern, '/')
+                ? $pattern
+                : TestingConfig::projectRoot() . '/' . $pattern;
+
+            foreach (glob($absolute, GLOB_BRACE) ?: [] as $path) {
+                if (! is_file($path)) {
+                    continue;
+                }
+
+                $mtime = (int) filemtime($path);
+                if ($mtime > $newestTime) {
+                    $newestTime = $mtime;
+                    $newest = $path;
+                }
+            }
+        }
+
+        return $newest;
+    }
+
     private static function buildTestDatabaseDump(): void
     {
         $dumpPath = TestingConfig::dumpPath();
         @mkdir(dirname($dumpPath), recursive: true);
+
+        $buildCommand = TestingConfig::buildCommand();
+        if ($buildCommand !== null) {
+            self::runShell(['sh', '-c', $buildCommand]);
+
+            if (! file_exists($dumpPath)) {
+                throw new RuntimeException(sprintf(
+                    'build_command (`%s`) finished without writing a dump to %s.',
+                    $buildCommand,
+                    $dumpPath,
+                ));
+            }
+
+            return;
+        }
 
         // wp db drop fails if the DB doesn't exist; ignore its exit code.
         self::process()

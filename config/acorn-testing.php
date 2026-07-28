@@ -64,6 +64,42 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Custom build command
+    |--------------------------------------------------------------------------
+    |
+    | Shell command that builds the test database and writes the dump. Set this
+    | when your baseline needs more than `plugins` + `seeders` can express —
+    | plugin activation order, migrations, post-migration fixes. When set, it
+    | replaces the built-in build entirely.
+    |
+    |   'build_command' => 'php scripts/setup.php env:seed --test',
+    |
+    | With this null and both `plugins` and `seeders` empty, building is refused
+    | rather than silently producing a bare WordPress install.
+    |
+    */
+    'build_command' => null,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Staleness watch paths
+    |--------------------------------------------------------------------------
+    |
+    | Globs, relative to the project root, whose newest mtime is compared
+    | against the dump. If anything here is newer, the suite fails instead of
+    | testing the previously built world — the dump is authoritative, so an
+    | edited seeder is otherwise invisible until someone rebuilds by hand.
+    |
+    | Set to [] to opt out.
+    |
+    */
+    'watch_paths' => [
+        'database/seeders/*.php',
+        'database/seeders/**/*.php',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | wp core install — site title
     |--------------------------------------------------------------------------
     */
@@ -111,4 +147,60 @@ return [
     |
     */
     'playwright_timeout_ms' => 90_000,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Per-test isolation — protected tables
+    |--------------------------------------------------------------------------
+    |
+    | Unprefixed table names isolation never touches. These keep WordPress
+    | "installed" between tests: site options, applied migrations, the taxonomy
+    | structure. Everything not listed here or in `scoped_tables` is truncated
+    | between tests — but only when it actually holds rows.
+    |
+    */
+    'protected_tables' => [
+        'options',
+        'migrations',
+        'terms',
+        'term_taxonomy',
+        'termmeta',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Per-test isolation — scoped tables
+    |--------------------------------------------------------------------------
+    |
+    | Unprefixed table name => the column holding the owning object id. Rows
+    | whose id is in the captured baseline survive; everything a test created is
+    | deleted. Use this instead of protecting a table outright whenever a table
+    | mixes baseline rows with test-created ones.
+    |
+    | `term_relationships` is the one people miss: it carries each post's
+    | language, translation group, product category and product type, so
+    | truncating it strips the baseline of everything but the rows themselves.
+    |
+    | Capture the baseline as the final step of your build with
+    | `wp acorn acorn-testing:capture-baseline`.
+    |
+    */
+    'scoped_tables' => [
+        'posts' => 'ID',
+        'postmeta' => 'post_id',
+        'users' => 'ID',
+        'usermeta' => 'user_id',
+        'term_relationships' => 'object_id',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Baseline option name
+    |--------------------------------------------------------------------------
+    |
+    | WordPress option holding the captured baseline ids. Lives in the options
+    | table, which is protected, so it survives every reset.
+    |
+    */
+    'baseline_option' => 'acorn_testing_baseline_ids',
 ];
